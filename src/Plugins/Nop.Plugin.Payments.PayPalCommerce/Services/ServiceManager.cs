@@ -39,6 +39,7 @@ namespace Nop.Plugin.Payments.PayPalCommerce.Services
         protected readonly IActionContextAccessor _actionContextAccessor;
         protected readonly IAddressService _addresService;
         protected readonly IAttributeParser<CheckoutAttribute, CheckoutAttributeValue> _checkoutAttributeParser;
+        protected readonly ICheckoutSessionService _checkoutSessionService;
         protected readonly ICountryService _countryService;
         protected readonly ICurrencyService _currencyService;
         protected readonly IGenericAttributeService _genericAttributeService;
@@ -65,6 +66,7 @@ namespace Nop.Plugin.Payments.PayPalCommerce.Services
             IActionContextAccessor actionContextAccessor,
             IAddressService addresService,
             IAttributeParser<CheckoutAttribute, CheckoutAttributeValue> checkoutAttributeParser,
+            ICheckoutSessionService checkoutSessionService,
             ICountryService countryService,
             ICurrencyService currencyService,
             IGenericAttributeService genericAttributeService,
@@ -87,6 +89,7 @@ namespace Nop.Plugin.Payments.PayPalCommerce.Services
             _actionContextAccessor = actionContextAccessor;
             _addresService = addresService;
             _checkoutAttributeParser = checkoutAttributeParser;
+            _checkoutSessionService = checkoutSessionService;
             _countryService = countryService;
             _currencyService = currencyService;
             _genericAttributeService = genericAttributeService;
@@ -394,7 +397,7 @@ namespace Nop.Plugin.Payments.PayPalCommerce.Services
 
                 //prepare purchase unit details
                 var taxTotal = Math.Round((await _orderTotalCalculationService.GetTaxTotalAsync(shoppingCart, false)).taxTotal, 2);
-                var (cartShippingTotal, _, _) = await _orderTotalCalculationService.GetShoppingCartShippingTotalAsync(shoppingCart, false);
+                var (_, cartShippingTotal, _, _) = await _orderTotalCalculationService.GetShoppingCartShippingTotalAsync(shoppingCart);
                 var shippingTotal = Math.Round(cartShippingTotal ?? decimal.Zero, 2);
                 var (shoppingCartTotal, _, _, _, _, _) = await _orderTotalCalculationService
                     .GetShoppingCartTotalAsync(shoppingCart, usePaymentMethodAdditionalFee: false);
@@ -452,9 +455,8 @@ namespace Nop.Plugin.Payments.PayPalCommerce.Services
                 }).ToListAsync();
 
                 //add checkout attributes as order items
-                var checkoutAttributes = await _genericAttributeService
-                    .GetAttributeAsync<string>(customer, NopCustomerDefaults.CheckoutAttributes, store.Id);
-                var checkoutAttributeValues = _checkoutAttributeParser.ParseAttributeValues(checkoutAttributes);
+                var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
+                var checkoutAttributeValues = _checkoutAttributeParser.ParseAttributeValues(checkoutSession.CheckoutAttributes);
                 await foreach (var (attribute, values) in checkoutAttributeValues)
                 {
                     await foreach (var attributeValue in values)

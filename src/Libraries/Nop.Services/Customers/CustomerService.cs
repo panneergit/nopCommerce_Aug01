@@ -15,6 +15,7 @@ using Nop.Core.Infrastructure;
 using Nop.Data;
 using Nop.Services.Common;
 using Nop.Services.Localization;
+using Nop.Services.Orders;
 
 namespace Nop.Services.Customers
 {
@@ -26,6 +27,7 @@ namespace Nop.Services.Customers
         #region Fields
 
         protected readonly CustomerSettings _customerSettings;
+        protected readonly ICheckoutSessionService _checkoutSessionService;
         protected readonly IGenericAttributeService _genericAttributeService;
         protected readonly INopDataProvider _dataProvider;
         protected readonly IRepository<Address> _customerAddressRepository;
@@ -54,6 +56,7 @@ namespace Nop.Services.Customers
         #region Ctor
 
         public CustomerService(CustomerSettings customerSettings,
+            ICheckoutSessionService checkoutSessionService,
             IGenericAttributeService genericAttributeService,
             INopDataProvider dataProvider,
             IRepository<Address> customerAddressRepository,
@@ -78,6 +81,7 @@ namespace Nop.Services.Customers
             TaxSettings taxSettings)
         {
             _customerSettings = customerSettings;
+            _checkoutSessionService = checkoutSessionService;
             _genericAttributeService = genericAttributeService;
             _dataProvider = dataProvider;
             _customerAddressRepository = customerAddressRepository;
@@ -623,34 +627,43 @@ namespace Nop.Services.Customers
             bool clearPaymentMethod = true)
         {
             if (customer == null)
-                throw new ArgumentNullException();
+                throw new ArgumentNullException(nameof(customer));
+
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, storeId);
+
+            checkoutSession.SubTotal = null;
+            checkoutSession.ShippingTotal = null;
+            checkoutSession.TaxTotal = null;
+            checkoutSession.PaymentFeeTotal = null;
 
             //clear entered coupon codes
             if (clearCouponCodes)
             {
-                await _genericAttributeService.SaveAttributeAsync<string>(customer, NopCustomerDefaults.DiscountCouponCodeAttribute, null);
-                await _genericAttributeService.SaveAttributeAsync<string>(customer, NopCustomerDefaults.GiftCardCouponCodesAttribute, null);
+                checkoutSession.DiscountCouponCodes = null;
+                checkoutSession.GiftCardCouponCodes = null;
             }
 
             //clear checkout attributes
             if (clearCheckoutAttributes)
-                await _genericAttributeService.SaveAttributeAsync<string>(customer, NopCustomerDefaults.CheckoutAttributes, null, storeId);
+                checkoutSession.CheckoutAttributes = null;
 
             //clear reward points flag
             if (clearRewardPoints)
-                await _genericAttributeService.SaveAttributeAsync(customer, NopCustomerDefaults.UseRewardPointsDuringCheckoutAttribute, false, storeId);
+                checkoutSession.UseRewardPoints= false;
 
             //clear selected shipping method
             if (clearShippingMethod)
             {
-                await _genericAttributeService.SaveAttributeAsync<ShippingOption>(customer, NopCustomerDefaults.SelectedShippingOptionAttribute, null, storeId);
-                await _genericAttributeService.SaveAttributeAsync<ShippingOption>(customer, NopCustomerDefaults.OfferedShippingOptionsAttribute, null, storeId);
-                await _genericAttributeService.SaveAttributeAsync<PickupPoint>(customer, NopCustomerDefaults.SelectedPickupPointAttribute, null, storeId);
+                checkoutSession.SelectedPickupPoint = null;
+                checkoutSession.SelectedShippingOption = null;
+                checkoutSession.OfferedShippingOptions = null;
             }
 
             //clear selected payment method
             if (clearPaymentMethod)
-                await _genericAttributeService.SaveAttributeAsync<string>(customer, NopCustomerDefaults.SelectedPaymentMethodAttribute, null, storeId);
+                checkoutSession.SelectedPaymentMethod = null;
+
+            await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSession);
         }
 
         /// <summary>
@@ -852,16 +865,17 @@ namespace Nop.Services.Customers
             if (customer == null)
                 throw new ArgumentNullException(nameof(customer));
 
-            var existingCouponCodes = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.DiscountCouponCodeAttribute);
+            var store = await _storeContext.GetCurrentStoreAsync();
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
 
             var couponCodes = new List<string>();
-            if (string.IsNullOrEmpty(existingCouponCodes))
+            if (string.IsNullOrEmpty(checkoutSession.DiscountCouponCodes))
                 return couponCodes.ToArray();
 
             try
             {
                 var xmlDoc = new XmlDocument();
-                xmlDoc.LoadXml(existingCouponCodes);
+                xmlDoc.LoadXml(checkoutSession.DiscountCouponCodes);
 
                 var nodeList1 = xmlDoc.SelectNodes(@"//DiscountCouponCodes/CouponCode");
                 foreach (XmlNode node1 in nodeList1)
@@ -894,21 +908,22 @@ namespace Nop.Services.Customers
             if (customer == null)
                 throw new ArgumentNullException(nameof(customer));
 
+            var store = await _storeContext.GetCurrentStoreAsync();
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
+
             var result = string.Empty;
             try
             {
-                var existingCouponCodes = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.DiscountCouponCodeAttribute);
-
                 couponCode = couponCode.Trim().ToLowerInvariant();
 
                 var xmlDoc = new XmlDocument();
-                if (string.IsNullOrEmpty(existingCouponCodes))
+                if (string.IsNullOrEmpty(checkoutSession.DiscountCouponCodes))
                 {
                     var element1 = xmlDoc.CreateElement("DiscountCouponCodes");
                     xmlDoc.AppendChild(element1);
                 }
                 else
-                    xmlDoc.LoadXml(existingCouponCodes);
+                    xmlDoc.LoadXml(checkoutSession.DiscountCouponCodes);
 
                 var rootElement = (XmlElement)xmlDoc.SelectSingleNode(@"//DiscountCouponCodes");
 
@@ -945,7 +960,8 @@ namespace Nop.Services.Customers
             }
 
             //apply new value
-            await _genericAttributeService.SaveAttributeAsync(customer, NopCustomerDefaults.DiscountCouponCodeAttribute, result);
+            checkoutSession.DiscountCouponCodes = result;
+            await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSession);
         }
 
         /// <summary>
@@ -966,7 +982,10 @@ namespace Nop.Services.Customers
             var existingCouponCodes = await ParseAppliedDiscountCouponCodesAsync(customer);
 
             //clear them
-            await _genericAttributeService.SaveAttributeAsync<string>(customer, NopCustomerDefaults.DiscountCouponCodeAttribute, null);
+            var store = await _storeContext.GetCurrentStoreAsync();
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
+            checkoutSession.DiscountCouponCodes = null;
+            await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSession);
 
             //save again except removed one
             foreach (var existingCouponCode in existingCouponCodes)
@@ -987,16 +1006,17 @@ namespace Nop.Services.Customers
             if (customer == null)
                 throw new ArgumentNullException(nameof(customer));
 
-            var existingCouponCodes = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.GiftCardCouponCodesAttribute);
+            var store = await _storeContext.GetCurrentStoreAsync();
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
 
             var couponCodes = new List<string>();
-            if (string.IsNullOrEmpty(existingCouponCodes))
+            if (string.IsNullOrEmpty(checkoutSession.GiftCardCouponCodes))
                 return couponCodes.ToArray();
 
             try
             {
                 var xmlDoc = new XmlDocument();
-                xmlDoc.LoadXml(existingCouponCodes);
+                xmlDoc.LoadXml(checkoutSession.GiftCardCouponCodes);
 
                 var nodeList1 = xmlDoc.SelectNodes(@"//GiftCardCouponCodes/CouponCode");
                 foreach (XmlNode node1 in nodeList1)
@@ -1030,21 +1050,22 @@ namespace Nop.Services.Customers
             if (customer == null)
                 throw new ArgumentNullException(nameof(customer));
 
+            var store = await _storeContext.GetCurrentStoreAsync();
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
+
             var result = string.Empty;
             try
             {
-                var existingCouponCodes = await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.GiftCardCouponCodesAttribute);
-
                 couponCode = couponCode.Trim().ToLowerInvariant();
 
                 var xmlDoc = new XmlDocument();
-                if (string.IsNullOrEmpty(existingCouponCodes))
+                if (string.IsNullOrEmpty(checkoutSession.GiftCardCouponCodes))
                 {
                     var element1 = xmlDoc.CreateElement("GiftCardCouponCodes");
                     xmlDoc.AppendChild(element1);
                 }
                 else
-                    xmlDoc.LoadXml(existingCouponCodes);
+                    xmlDoc.LoadXml(checkoutSession.GiftCardCouponCodes);
 
                 var rootElement = (XmlElement)xmlDoc.SelectSingleNode(@"//GiftCardCouponCodes");
 
@@ -1080,7 +1101,8 @@ namespace Nop.Services.Customers
             }
 
             //apply new value
-            await _genericAttributeService.SaveAttributeAsync(customer, NopCustomerDefaults.GiftCardCouponCodesAttribute, result);
+            checkoutSession.GiftCardCouponCodes = result;
+            await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSession);
         }
 
         /// <summary>
@@ -1101,7 +1123,10 @@ namespace Nop.Services.Customers
             var existingCouponCodes = await ParseAppliedGiftCardCouponCodesAsync(customer);
 
             //clear them
-            await _genericAttributeService.SaveAttributeAsync<string>(customer, NopCustomerDefaults.GiftCardCouponCodesAttribute, null);
+            var store = await _storeContext.GetCurrentStoreAsync();
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
+            checkoutSession.GiftCardCouponCodes = null;
+            await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSession);
 
             //save again except removed one
             foreach (var existingCouponCode in existingCouponCodes)

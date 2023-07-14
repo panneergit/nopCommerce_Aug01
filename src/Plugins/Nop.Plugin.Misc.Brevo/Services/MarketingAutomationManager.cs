@@ -147,10 +147,12 @@ namespace Nop.Plugin.Misc.Brevo.Services
                     var urlHelper = _urlHelperFactory.GetUrlHelper(_actionContextAccessor.ActionContext);
 
                     //get shopping cart amounts
-                    var (_, cartDiscount, _, cartSubtotal, _) = await _orderTotalCalculationService.GetShoppingCartSubTotalAsync(cart,
-                        await _workContext.GetTaxDisplayTypeAsync() == TaxDisplayType.IncludingTax);
+                    var taxType = await _workContext.GetTaxDisplayTypeAsync();
+                    var (_, cartDiscount, _, cartSubtotal, _) = await _orderTotalCalculationService
+                        .GetShoppingCartSubTotalAsync(cart, taxType == TaxDisplayType.IncludingTax);
                     var cartTax = await _orderTotalCalculationService.GetTaxTotalAsync(cart, false);
-                    var cartShipping = await _orderTotalCalculationService.GetShoppingCartShippingTotalAsync(cart);
+                    var (shippingInclTax, shippingExclTax, _, _) = await _orderTotalCalculationService.GetShoppingCartShippingTotalAsync(cart);
+                    var cartShipping = taxType == TaxDisplayType.IncludingTax ? shippingInclTax : shippingExclTax;
                     var (cartTotal, _, _, _, _, _) = await _orderTotalCalculationService.GetShoppingCartTotalAsync(cart, false, false);
 
                     //get products data by shopping cart items

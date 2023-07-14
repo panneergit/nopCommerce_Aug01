@@ -48,6 +48,7 @@ namespace Nop.Web.Controllers
         protected readonly CustomerSettings _customerSettings;
         protected readonly IAttributeParser<CheckoutAttribute, CheckoutAttributeValue> _checkoutAttributeParser;
         protected readonly IAttributeService<CheckoutAttribute, CheckoutAttributeValue> _checkoutAttributeService;
+        protected readonly ICheckoutSessionService _checkoutSessionService;
         protected readonly ICurrencyService _currencyService;
         protected readonly ICustomerActivityService _customerActivityService;
         protected readonly ICustomerService _customerService;
@@ -90,6 +91,7 @@ namespace Nop.Web.Controllers
             CustomerSettings customerSettings,
             IAttributeParser<CheckoutAttribute, CheckoutAttributeValue> checkoutAttributeParser,
             IAttributeService<CheckoutAttribute, CheckoutAttributeValue> checkoutAttributeService,
+            ICheckoutSessionService checkoutSessionService,
             ICurrencyService currencyService,
             ICustomerActivityService customerActivityService,
             ICustomerService customerService,
@@ -128,6 +130,7 @@ namespace Nop.Web.Controllers
             _customerSettings = customerSettings;
             _checkoutAttributeParser = checkoutAttributeParser;
             _checkoutAttributeService = checkoutAttributeService;
+            _checkoutSessionService = checkoutSessionService;
             _currencyService = currencyService;
             _customerActivityService = customerActivityService;
             _customerService = customerService;
@@ -176,9 +179,14 @@ namespace Nop.Web.Controllers
                 throw new ArgumentNullException(nameof(form));
 
             var attributesXml = string.Empty;
-            var excludeShippableAttributes = !await _shoppingCartService.ShoppingCartRequiresShippingAsync(cart);
+
             var store = await _storeContext.GetCurrentStoreAsync();
+            var customer = await _workContext.GetCurrentCustomerAsync();
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
+            
+            var excludeShippableAttributes = !await _shoppingCartService.ShoppingCartRequiresShippingAsync(cart);
             var checkoutAttributes = await _checkoutAttributeService.GetAllAttributesAsync(_staticCacheManager, _storeMappingService, store.Id, excludeShippableAttributes);
+            
             foreach (var attribute in checkoutAttributes)
             {
                 var controlId = $"checkout_attribute_{attribute.Id}";
@@ -291,7 +299,8 @@ namespace Nop.Web.Controllers
             }
 
             //save checkout attributes
-            await _genericAttributeService.SaveAttributeAsync(await _workContext.GetCurrentCustomerAsync(), NopCustomerDefaults.CheckoutAttributes, attributesXml, store.Id);
+            checkoutSession.CheckoutAttributes = attributesXml;
+            await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSession);
         }
 
         protected virtual async Task SaveItemAsync(ShoppingCartItem updatecartitem, List<string> addToCartWarnings, Product product,
@@ -324,7 +333,7 @@ namespace Nop.Web.Controllers
                 //update existing item
                 addToCartWarnings.AddRange(await _shoppingCartService.UpdateShoppingCartItemAsync(customer,
                     updatecartitem.Id, attributes, customerEnteredPriceConverted,
-                    rentalStartDate, rentalEndDate, quantity + (otherCartItemWithSameParameters?.Quantity ?? 0), true));
+                    rentalStartDate, rentalEndDate, quantity + (otherCartItemWithSameParameters?.Quantity ?? 0)));
                 if (otherCartItemWithSameParameters != null && !addToCartWarnings.Any())
                 {
                     //delete the same shopping cart item (the other one)
@@ -450,6 +459,8 @@ namespace Nop.Web.Controllers
             var customer = await _workContext.GetCurrentCustomerAsync();
             var store = await _storeContext.GetCurrentStoreAsync();
             var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, store.Id);
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
+
             //parse and save checkout attributes
             await ParseAndSaveCheckoutAttributesAsync(cart, form);
 
@@ -460,8 +471,7 @@ namespace Nop.Web.Controllers
             {
                 //find shipping options
                 //performance optimization. try cache first
-                shippingOptions = await _genericAttributeService.GetAttributeAsync<List<ShippingOption>>(customer,
-                    NopCustomerDefaults.OfferedShippingOptionsAttribute, store.Id);
+                shippingOptions = checkoutSession.OfferedShippingOptions;
 
                 if (shippingOptions == null || !shippingOptions.Any())
                 {
@@ -495,13 +505,10 @@ namespace Nop.Web.Controllers
                     errors = errors
                 });
 
-            //reset pickup point
-            await _genericAttributeService.SaveAttributeAsync<PickupPoint>(customer,
-                NopCustomerDefaults.SelectedPickupPointAttribute, null, store.Id);
-
-            //cache shipping option
-            await _genericAttributeService.SaveAttributeAsync(customer,
-                NopCustomerDefaults.SelectedShippingOptionAttribute, selectedShippingOption, store.Id);
+            //reset pickup point and cache shipping option
+            checkoutSession.SelectedPickupPoint = null;
+            checkoutSession.SelectedShippingOption = selectedShippingOption;
+            await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSession);
 
             var orderTotalsSectionHtml = await RenderViewComponentToStringAsync(typeof(OrderTotalsViewComponent), new { isEditable = true });
 
@@ -950,20 +957,21 @@ namespace Nop.Web.Controllers
             var customer = await _workContext.GetCurrentCustomerAsync();
             var store = await _storeContext.GetCurrentStoreAsync();
             var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, store.Id);
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
 
             //save selected attributes
             await ParseAndSaveCheckoutAttributesAsync(cart, form);
-            var attributeXml = await _genericAttributeService.GetAttributeAsync<string>(customer,
-                NopCustomerDefaults.CheckoutAttributes, store.Id);
 
             //conditions
             var enabledAttributeIds = new List<int>();
             var disabledAttributeIds = new List<int>();
             var excludeShippableAttributes = !await _shoppingCartService.ShoppingCartRequiresShippingAsync(cart);
-            var attributes = await _checkoutAttributeService.GetAllAttributesAsync(_staticCacheManager, _storeMappingService, store.Id, excludeShippableAttributes);
+            var attributes = await _checkoutAttributeService
+                .GetAllAttributesAsync(_staticCacheManager, _storeMappingService, store.Id, excludeShippableAttributes);
             foreach (var attribute in attributes)
             {
-                var conditionMet = await _checkoutAttributeParser.IsConditionMetAsync(attribute.ConditionAttributeXml, attributeXml);
+                var conditionMet = await _checkoutAttributeParser
+                    .IsConditionMetAsync(attribute.ConditionAttributeXml, checkoutSession.CheckoutAttributes);
                 if (conditionMet.HasValue)
                 {
                     if (conditionMet.Value)
@@ -1207,7 +1215,7 @@ namespace Nop.Web.Controllers
                 ItemId = cartItem.Item.Id,
                 Warnings = await _shoppingCartService.UpdateShoppingCartItemAsync(customer,
                     cartItem.Item.Id, cartItem.Item.AttributesXml, cartItem.Item.CustomerEnteredPrice,
-                    cartItem.Item.RentalStartDateUtc, cartItem.Item.RentalEndDateUtc, cartItem.NewQuantity, true)
+                    cartItem.Item.RentalStartDateUtc, cartItem.Item.RentalEndDateUtc, cartItem.NewQuantity)
             }).ToListAsync();
 
             //updated cart
@@ -1252,14 +1260,14 @@ namespace Nop.Web.Controllers
             var customer = await _workContext.GetCurrentCustomerAsync();
             var store = await _storeContext.GetCurrentStoreAsync();
             var cart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, store.Id);
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
 
             //parse and save checkout attributes
             await ParseAndSaveCheckoutAttributesAsync(cart, form);
 
             //validate attributes
-            var checkoutAttributes = await _genericAttributeService.GetAttributeAsync<string>(customer,
-                NopCustomerDefaults.CheckoutAttributes, store.Id);
-            var checkoutAttributeWarnings = await _shoppingCartService.GetShoppingCartWarningsAsync(cart, checkoutAttributes, true);
+            var checkoutAttributeWarnings = await _shoppingCartService
+                .GetShoppingCartWarningsAsync(cart, checkoutSession.CheckoutAttributes, true);
             if (checkoutAttributeWarnings.Any())
             {
                 //something wrong, redisplay the page with warnings
@@ -1539,7 +1547,7 @@ namespace Nop.Web.Controllers
                                 var currSciWarnings = await _shoppingCartService.UpdateShoppingCartItemAsync(customer,
                                     sci.Id, sci.AttributesXml, sci.CustomerEnteredPrice,
                                     sci.RentalStartDateUtc, sci.RentalEndDateUtc,
-                                    newQuantity, true);
+                                    newQuantity);
                                 innerWarnings.Add(sci.Id, currSciWarnings);
                             }
 

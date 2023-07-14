@@ -11,6 +11,7 @@ using Nop.Services.Common;
 using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Logging;
+using Nop.Services.Orders;
 using Nop.Services.Tax.Events;
 using Country = Nop.Core.Domain.Directory.Country;
 
@@ -26,6 +27,7 @@ namespace Nop.Services.Tax
         protected readonly AddressSettings _addressSettings;
         protected readonly CustomerSettings _customerSettings;
         protected readonly IAddressService _addressService;
+        protected readonly ICheckoutSessionService _checkoutSessionService;
         protected readonly ICountryService _countryService;
         protected readonly ICustomerService _customerService;
         protected readonly IEventPublisher _eventPublisher;
@@ -47,6 +49,7 @@ namespace Nop.Services.Tax
         public TaxService(AddressSettings addressSettings,
             CustomerSettings customerSettings,
             IAddressService addressService,
+            ICheckoutSessionService checkoutSessionService,
             ICountryService countryService,
             ICustomerService customerService,
             IEventPublisher eventPublisher,
@@ -64,6 +67,7 @@ namespace Nop.Services.Tax
             _addressSettings = addressSettings;
             _customerSettings = customerSettings;
             _addressService = addressService;
+            _checkoutSessionService = checkoutSessionService;
             _countryService = countryService;
             _customerService = customerService;
             _eventPublisher = eventPublisher;
@@ -220,9 +224,9 @@ namespace Nop.Services.Tax
             //tax is based on pickup point address
             if (!overriddenBasedOn && _taxSettings.TaxBasedOnPickupPointAddress && _shippingSettings.AllowPickupInStore)
             {
-                var pickupPoint = await _genericAttributeService.GetAttributeAsync<PickupPoint>(customer,
-                    NopCustomerDefaults.SelectedPickupPointAttribute, store.Id);
-                if (pickupPoint != null)
+                var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
+                var pickupPoint = checkoutSession.SelectedPickupPoint;
+                if (pickupPoint is not null)
                 {
                     taxRateRequest.Address = await LoadPickupPointTaxAddressAsync(pickupPoint);
                     return taxRateRequest;

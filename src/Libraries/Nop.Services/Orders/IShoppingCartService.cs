@@ -15,11 +15,17 @@ namespace Nop.Services.Orders
         /// Delete shopping cart item
         /// </summary>
         /// <param name="shoppingCartItem">Shopping cart item</param>
-        /// <param name="resetCheckoutData">A value indicating whether to reset checkout data</param>
         /// <param name="ensureOnlyActiveCheckoutAttributes">A value indicating whether to ensure that only active checkout attributes are attached to the current customer</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        Task DeleteShoppingCartItemAsync(ShoppingCartItem shoppingCartItem, bool resetCheckoutData = true,
-            bool ensureOnlyActiveCheckoutAttributes = false);
+        Task DeleteShoppingCartItemAsync(ShoppingCartItem shoppingCartItem, bool ensureOnlyActiveCheckoutAttributes = false);
+
+        /// <summary>
+        /// Delete shopping cart item
+        /// </summary>
+        /// <param name="shoppingCartItemId">Shopping cart item ID</param>
+        /// <param name="ensureOnlyActiveCheckoutAttributes">A value indicating whether to ensure that only active checkout attributes are attached to the current customer</param>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        Task DeleteShoppingCartItemAsync(int shoppingCartItemId, bool ensureOnlyActiveCheckoutAttributes = false);
 
         /// <summary>
         /// Clear shopping cart
@@ -28,16 +34,6 @@ namespace Nop.Services.Orders
         /// <param name="storeId">Store ID</param>
         /// <returns>A task that represents the asynchronous operation</returns>
         Task ClearShoppingCartAsync(Customer customer, int storeId);
-
-        /// <summary>
-        /// Delete shopping cart item
-        /// </summary>
-        /// <param name="shoppingCartItemId">Shopping cart item ID</param>
-        /// <param name="resetCheckoutData">A value indicating whether to reset checkout data</param>
-        /// <param name="ensureOnlyActiveCheckoutAttributes">A value indicating whether to ensure that only active checkout attributes are attached to the current customer</param>
-        /// <returns>A task that represents the asynchronous operation</returns>
-        Task DeleteShoppingCartItemAsync(int shoppingCartItemId, bool resetCheckoutData = true,
-            bool ensureOnlyActiveCheckoutAttributes = false);
 
         /// <summary>
         /// Deletes expired shopping cart items
@@ -278,7 +274,6 @@ namespace Nop.Services.Orders
         /// <param name="rentalStartDate">Rental start date</param>
         /// <param name="rentalEndDate">Rental end date</param>
         /// <param name="quantity">New shopping cart item quantity</param>
-        /// <param name="resetCheckoutData">A value indicating whether to reset checkout data</param>
         /// <returns>
         /// A task that represents the asynchronous operation
         /// The task result contains the warnings
@@ -287,7 +282,7 @@ namespace Nop.Services.Orders
             int shoppingCartItemId, string attributesXml,
             decimal customerEnteredPrice,
             DateTime? rentalStartDate = null, DateTime? rentalEndDate = null,
-            int quantity = 1, bool resetCheckoutData = true);
+            int quantity = 1);
 
         /// <summary>
         /// Migrate shopping cart

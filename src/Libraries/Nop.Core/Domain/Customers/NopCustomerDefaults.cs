@@ -51,14 +51,9 @@
         #region Customer attributes
 
         /// <summary>
-        /// Gets a name of generic attribute to store the value of 'DiscountCouponCode'
+        /// Gets a name of generic attribute to store the checkout session value
         /// </summary>
-        public static string DiscountCouponCodeAttribute => "DiscountCouponCode";
-
-        /// <summary>
-        /// Gets a name of generic attribute to store the value of 'GiftCardCouponCodes'
-        /// </summary>
-        public static string GiftCardCouponCodesAttribute => "GiftCardCouponCodes";
+        public static string CheckoutSession => "CheckoutSession";
 
         /// <summary>
         /// Gets a name of generic attribute to store the value of 'AvatarPictureId'
@@ -111,31 +106,6 @@
         public static string AdminAreaStoreScopeConfigurationAttribute => "AdminAreaStoreScopeConfiguration";
 
         /// <summary>
-        /// Gets a name of generic attribute to store the value of 'SelectedPaymentMethod'
-        /// </summary>
-        public static string SelectedPaymentMethodAttribute => "SelectedPaymentMethod";
-
-        /// <summary>
-        /// Gets a name of generic attribute to store the value of 'SelectedShippingOption'
-        /// </summary>
-        public static string SelectedShippingOptionAttribute => "SelectedShippingOption";
-
-        /// <summary>
-        /// Gets a name of generic attribute to store the value of 'SelectedPickupPoint'
-        /// </summary>
-        public static string SelectedPickupPointAttribute => "SelectedPickupPoint";
-
-        /// <summary>
-        /// Gets a name of generic attribute to store the value of 'CheckoutAttributes'
-        /// </summary>
-        public static string CheckoutAttributes => "CheckoutAttributes";
-
-        /// <summary>
-        /// Gets a name of generic attribute to store the value of 'OfferedShippingOptions'
-        /// </summary>
-        public static string OfferedShippingOptionsAttribute => "OfferedShippingOptions";
-
-        /// <summary>
         /// Gets a name of generic attribute to store the value of 'LastContinueShoppingPage'
         /// </summary>
         public static string LastContinueShoppingPageAttribute => "LastContinueShoppingPage";
@@ -149,11 +119,6 @@
         /// Gets a name of generic attribute to store the value of 'WorkingThemeName'
         /// </summary>
         public static string WorkingThemeNameAttribute => "WorkingThemeName";
-
-        /// <summary>
-        /// Gets a name of generic attribute to store the value of 'UseRewardPointsDuringCheckout'
-        /// </summary>
-        public static string UseRewardPointsDuringCheckoutAttribute => "UseRewardPointsDuringCheckout";
 
         /// <summary>
         /// Gets a name of generic attribute to store the value of 'EuCookieLawAccepted'

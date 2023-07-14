@@ -181,6 +181,7 @@ namespace Nop.Web.Framework.Infrastructure
             services.AddScoped<ISmtpBuilder, SmtpBuilder>();
             services.AddScoped<IEmailSender, EmailSender>();
             services.AddScoped<ICheckoutAttributeFormatter, CheckoutAttributeFormatter>();
+            services.AddScoped<ICheckoutSessionService, CheckoutSessionService>();
             services.AddScoped<IGiftCardService, GiftCardService>();
             services.AddScoped<IOrderService, OrderService>();
             services.AddScoped<IOrderReportService, OrderReportService>();

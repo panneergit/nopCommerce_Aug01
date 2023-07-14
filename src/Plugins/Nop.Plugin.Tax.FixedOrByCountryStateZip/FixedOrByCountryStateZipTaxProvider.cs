@@ -1,7 +1,6 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Nop.Core;
 using Nop.Core.Caching;
-using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Tax;
 using Nop.Plugin.Tax.FixedOrByCountryStateZip.Domain;
 using Nop.Plugin.Tax.FixedOrByCountryStateZip.Infrastructure.Cache;
@@ -24,6 +23,7 @@ namespace Nop.Plugin.Tax.FixedOrByCountryStateZip
         #region Fields
 
         protected readonly FixedOrByCountryStateZipTaxSettings _countryStateZipSettings;
+        protected readonly ICheckoutSessionService _checkoutSessionService;
         protected readonly ICountryStateZipService _taxRateService;
         protected readonly IGenericAttributeService _genericAttributeService;
         protected readonly IHttpContextAccessor _httpContextAccessor;
@@ -42,6 +42,7 @@ namespace Nop.Plugin.Tax.FixedOrByCountryStateZip
         #region Ctor
 
         public FixedOrByCountryStateZipTaxProvider(FixedOrByCountryStateZipTaxSettings countryStateZipSettings,
+            ICheckoutSessionService checkoutSessionService,
             ICountryStateZipService taxRateService,
             IGenericAttributeService genericAttributeService,
             IHttpContextAccessor httpContextAccessor,
@@ -56,6 +57,7 @@ namespace Nop.Plugin.Tax.FixedOrByCountryStateZip
             TaxSettings taxSettings)
         {
             _countryStateZipSettings = countryStateZipSettings;
+            _checkoutSessionService = checkoutSessionService;
             _taxRateService = taxRateService;
             _genericAttributeService = genericAttributeService;
             _httpContextAccessor = httpContextAccessor;
@@ -188,10 +190,8 @@ namespace Nop.Plugin.Tax.FixedOrByCountryStateZip
             var shippingTax = decimal.Zero;
             if (_taxSettings.ShippingIsTaxable)
             {
-                var (shippingExclTax, _, _) = await _orderTotalCalculationService
-                    .GetShoppingCartShippingTotalAsync(taxTotalRequest.ShoppingCart, false);
-                var (shippingInclTax, taxRate, _) = await _orderTotalCalculationService
-                    .GetShoppingCartShippingTotalAsync(taxTotalRequest.ShoppingCart, true);
+                var (shippingInclTax, shippingExclTax, taxRate, _) = await _orderTotalCalculationService
+                    .GetShoppingCartShippingTotalAsync(taxTotalRequest.ShoppingCart);
                 if (shippingExclTax.HasValue && shippingInclTax.HasValue)
                 {
                     shippingTax = shippingInclTax.Value - shippingExclTax.Value;
@@ -217,13 +217,11 @@ namespace Nop.Plugin.Tax.FixedOrByCountryStateZip
             var paymentMethodAdditionalFeeTax = decimal.Zero;
             if (_taxSettings.PaymentMethodAdditionalFeeIsTaxable)
             {
-                var paymentMethodSystemName = taxTotalRequest.Customer != null
-                    ? await _genericAttributeService
-                        .GetAttributeAsync<string>(taxTotalRequest.Customer, NopCustomerDefaults.SelectedPaymentMethodAttribute, taxTotalRequest.StoreId)
-                    : string.Empty;
+                var checkoutSession = await _checkoutSessionService
+                    .GetCustomerCheckoutSessionAsync(taxTotalRequest.Customer.Id, taxTotalRequest.StoreId);
 
                 var paymentMethodAdditionalFee = await _paymentService
-                    .GetAdditionalHandlingFeeAsync(taxTotalRequest.ShoppingCart, paymentMethodSystemName);
+                    .GetAdditionalHandlingFeeAsync(taxTotalRequest.ShoppingCart, checkoutSession.SelectedPaymentMethod);
                 var (paymentMethodAdditionalFeeExclTax, _) = await _taxService
                     .GetPaymentMethodAdditionalFeeAsync(paymentMethodAdditionalFee, false, taxTotalRequest.Customer);
                 var (paymentMethodAdditionalFeeInclTax, taxRate) = await _taxService

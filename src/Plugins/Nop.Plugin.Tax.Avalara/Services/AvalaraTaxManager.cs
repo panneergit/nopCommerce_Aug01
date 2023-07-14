@@ -33,7 +33,7 @@ namespace Nop.Plugin.Tax.Avalara.Services
         protected readonly AvalaraTaxSettings _avalaraTaxSettings;
         protected readonly IAddressService _addressService;
         protected readonly IAttributeParser<CheckoutAttribute, CheckoutAttributeValue> _checkoutAttributeParser;
-        protected readonly IAttributeService<CheckoutAttribute, CheckoutAttributeValue> _checkoutAttributeService;
+        protected readonly ICheckoutSessionService _checkoutSessionService;
         protected readonly ICountryService _countryService;
         protected readonly ICustomerService _customerService;
         protected readonly IGenericAttributeService _genericAttributeService;
@@ -66,7 +66,7 @@ namespace Nop.Plugin.Tax.Avalara.Services
         public AvalaraTaxManager(AvalaraTaxSettings avalaraTaxSettings,
             IAddressService addressService,
             IAttributeParser<CheckoutAttribute, CheckoutAttributeValue> checkoutAttributeParser,
-            IAttributeService<CheckoutAttribute, CheckoutAttributeValue> checkoutAttributeService,
+            ICheckoutSessionService checkoutSessionService,
             ICountryService countryService,
             ICustomerService customerService,
             IGenericAttributeService genericAttributeService,
@@ -92,6 +92,7 @@ namespace Nop.Plugin.Tax.Avalara.Services
             _avalaraTaxSettings = avalaraTaxSettings;
             _addressService = addressService;
             _checkoutAttributeParser = checkoutAttributeParser;
+            _checkoutSessionService = checkoutSessionService;
             _countryService = countryService;
             _customerService = customerService;
             _genericAttributeService = genericAttributeService;
@@ -283,8 +284,8 @@ namespace Nop.Plugin.Tax.Avalara.Services
             order.ShippingAddressId = customer.ShippingAddressId;
             if (_shippingSettings.AllowPickupInStore)
             {
-                var pickupPoint = await _genericAttributeService
-                    .GetAttributeAsync<PickupPoint>(customer, NopCustomerDefaults.SelectedPickupPointAttribute, storeId);
+                var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, storeId);
+                var pickupPoint = checkoutSession.SelectedPickupPoint;
                 if (pickupPoint != null)
                 {
                     var country = await _countryService.GetCountryByTwoLetterIsoCodeAsync(pickupPoint.CountryCode);
@@ -340,8 +341,7 @@ namespace Nop.Plugin.Tax.Avalara.Services
             }
 
             //or use default address for tax calculation
-            if (address == null)
-                address = await _addressService.GetAddressByIdAsync(_taxSettings.DefaultTaxAddressId);
+            address ??= await _addressService.GetAddressByIdAsync(_taxSettings.DefaultTaxAddressId);
 
             return address;
         }
@@ -1208,6 +1208,9 @@ namespace Nop.Plugin.Tax.Avalara.Services
         {
             return await HandleFunctionAsync(async () =>
             {
+                var checkoutSession = await _checkoutSessionService
+                    .GetCustomerCheckoutSessionAsync(taxTotalRequest.Customer.Id, taxTotalRequest.StoreId);
+
                 //create dummy order to create tax transaction
                 var customer = taxTotalRequest.Customer;
                 var order = new Order { CustomerId = customer.Id };
@@ -1216,19 +1219,17 @@ namespace Nop.Plugin.Tax.Avalara.Services
                 await PrepareOrderAddressesAsync(customer, order, taxTotalRequest.StoreId);
 
                 //checkout attributes
-                order.CheckoutAttributesXml = await _genericAttributeService
-                    .GetAttributeAsync<string>(customer, NopCustomerDefaults.CheckoutAttributes, taxTotalRequest.StoreId);
+                order.CheckoutAttributesXml = checkoutSession.CheckoutAttributes;
 
                 //shipping method
-                order.ShippingMethod = (await _genericAttributeService
-                    .GetAttributeAsync<ShippingOption>(customer, NopCustomerDefaults.SelectedShippingOptionAttribute, taxTotalRequest.StoreId))?.Name;
-                order.OrderShippingExclTax = (await _orderTotalCalculationService.GetShoppingCartShippingTotalAsync(taxTotalRequest.ShoppingCart, false)).shippingTotal ?? 0;
+                var (_, shippingTotal, _, _) = await _orderTotalCalculationService.GetShoppingCartShippingTotalAsync(taxTotalRequest.ShoppingCart);
+                order.ShippingMethod = checkoutSession.SelectedShippingOption?.Name;
+                order.OrderShippingExclTax = shippingTotal ?? 0;
 
                 //payment method
                 if (taxTotalRequest.UsePaymentMethodAdditionalFee)
                 {
-                    order.PaymentMethodSystemName = await _genericAttributeService
-                        .GetAttributeAsync<string>(customer, NopCustomerDefaults.SelectedPaymentMethodAttribute, taxTotalRequest.StoreId);
+                    order.PaymentMethodSystemName = checkoutSession.SelectedPaymentMethod;
                     if (!string.IsNullOrEmpty(order.PaymentMethodSystemName))
                         order.PaymentMethodAdditionalFeeExclTax = await _paymentService.GetAdditionalHandlingFeeAsync(taxTotalRequest.ShoppingCart, order.PaymentMethodSystemName);
                 }

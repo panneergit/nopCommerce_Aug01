@@ -12,6 +12,7 @@ using Nop.Services.Customers;
 using Nop.Services.Directory;
 using Nop.Services.Localization;
 using Nop.Services.Logging;
+using Nop.Services.Orders;
 using Nop.Services.Shipping.Pickup;
 
 namespace Nop.Services.Shipping
@@ -25,6 +26,7 @@ namespace Nop.Services.Shipping
 
         protected readonly IAddressService _addressService;
         protected readonly IAttributeParser<CheckoutAttribute, CheckoutAttributeValue> _checkoutAttributeParser;
+        protected readonly ICheckoutSessionService _checkoutSessionService;
         protected readonly ICountryService _countryService;
         protected readonly ICustomerService _customerService;
         protected readonly IGenericAttributeService _genericAttributeService;
@@ -49,6 +51,7 @@ namespace Nop.Services.Shipping
 
         public ShippingService(IAddressService addressService,
             IAttributeParser<CheckoutAttribute, CheckoutAttributeValue> checkoutAttributeParser,
+            ICheckoutSessionService checkoutSessionService,
             ICountryService countryService,
             ICustomerService customerService,
             IGenericAttributeService genericAttributeService,
@@ -69,6 +72,7 @@ namespace Nop.Services.Shipping
         {
             _addressService = addressService;
             _checkoutAttributeParser = checkoutAttributeParser;
+            _checkoutSessionService = checkoutSessionService;
             _countryService = countryService;
             _customerService = customerService;
             _genericAttributeService = genericAttributeService;
@@ -539,13 +543,18 @@ namespace Nop.Services.Shipping
             //checkout attributes
             if (request.Customer is null || !includeCheckoutAttributes)
                 return totalWeight;
+
             var store = await _storeContext.GetCurrentStoreAsync();
-            var checkoutAttributesXml = await _genericAttributeService.GetAttributeAsync<string>(request.Customer, NopCustomerDefaults.CheckoutAttributes, store.Id);
-            if (string.IsNullOrEmpty(checkoutAttributesXml))
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(request.Customer.Id, store.Id);
+
+            if (string.IsNullOrEmpty(checkoutSession.CheckoutAttributes))
                 return totalWeight;
-            var attributeValues = _checkoutAttributeParser.ParseAttributeValues(checkoutAttributesXml);
+
+            var attributeValues = _checkoutAttributeParser.ParseAttributeValues(checkoutSession.CheckoutAttributes);
             foreach (var attributeValue in await attributeValues.SelectMany(x => x.values).ToListAsync())
+            {
                 totalWeight += attributeValue.WeightAdjustment;
+            }
 
             return totalWeight;
         }

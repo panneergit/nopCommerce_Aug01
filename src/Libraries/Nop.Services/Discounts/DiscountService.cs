@@ -160,6 +160,19 @@ namespace Nop.Services.Discounts
         }
 
         /// <summary>
+        /// Get discounts by identifiers
+        /// </summary>
+        /// <param name="discountIds">Discount identifiers</param>
+        /// <returns>
+        /// A task that represents the asynchronous operation
+        /// The task result contains the list of discounts
+        /// </returns>
+        public virtual async Task<IList<Discount>> GetDiscountsByIdsAsync(int[] discountIds)
+        {
+            return await _discountRepository.GetByIdsAsync(discountIds, cache => default);
+        }
+
+        /// <summary>
         /// Gets all discounts
         /// </summary>
         /// <param name="discountType">Discount type; pass null to load all records</param>

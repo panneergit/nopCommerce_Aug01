@@ -7,6 +7,7 @@ using Nop.Core.Domain.Payments;
 using Nop.Core.Http.Extensions;
 using Nop.Services.Catalog;
 using Nop.Services.Customers;
+using Nop.Services.Orders;
 
 namespace Nop.Services.Payments
 {
@@ -17,10 +18,13 @@ namespace Nop.Services.Payments
     {
         #region Fields
 
+        protected readonly ICheckoutSessionService _checkoutSessionService;
         protected readonly ICustomerService _customerService;
         protected readonly IHttpContextAccessor _httpContextAccessor;
         protected readonly IPaymentPluginManager _paymentPluginManager;
         protected readonly IPriceCalculationService _priceCalculationService;
+        protected readonly IShoppingCartService _shoppingCartService;
+        protected readonly OrderSettings _orderSettings;
         protected readonly PaymentSettings _paymentSettings;
         protected readonly ShoppingCartSettings _shoppingCartSettings;
 
@@ -28,17 +32,23 @@ namespace Nop.Services.Payments
 
         #region Ctor
 
-        public PaymentService(ICustomerService customerService,
+        public PaymentService(ICheckoutSessionService checkoutSessionService,
+            ICustomerService customerService,
             IHttpContextAccessor httpContextAccessor,
             IPaymentPluginManager paymentPluginManager,
             IPriceCalculationService priceCalculationService,
+            IShoppingCartService shoppingCartService,
+            OrderSettings orderSettings,
             PaymentSettings paymentSettings,
             ShoppingCartSettings shoppingCartSettings)
         {
+            _checkoutSessionService = checkoutSessionService;
             _customerService = customerService;
             _httpContextAccessor = httpContextAccessor;
             _paymentPluginManager = paymentPluginManager;
             _priceCalculationService = priceCalculationService;
+            _shoppingCartService = shoppingCartService;
+            _orderSettings = orderSettings;
             _paymentSettings = paymentSettings;
             _shoppingCartSettings = shoppingCartSettings;
         }
@@ -151,18 +161,43 @@ namespace Nop.Services.Payments
                 return decimal.Zero;
 
             var customer = await _customerService.GetCustomerByIdAsync(cart.FirstOrDefault()?.CustomerId ?? 0);
-            var paymentMethod = await _paymentPluginManager.LoadPluginBySystemNameAsync(paymentMethodSystemName, customer, cart.FirstOrDefault()?.StoreId ?? 0);
+            var storeId = cart.FirstOrDefault()?.StoreId ?? 0;
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, storeId);
+
+            var paymentMethod = await _paymentPluginManager.LoadPluginBySystemNameAsync(paymentMethodSystemName, customer, storeId);
             if (paymentMethod == null)
                 return decimal.Zero;
 
+            //try to get totals from the checkout session
+            if (_orderSettings.UseCheckoutSession)
+            {
+                //check whether customer has the same shopping cart that is passed in parameters
+                var customerCart = await _shoppingCartService.GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, storeId);
+                if (cart.Select(item => item.Id).SequenceEqual(customerCart.Select(item => item.Id)))
+                {
+                    //if so, then get calculated and stored totals from the checkout session
+                    if (checkoutSession.PaymentFeeTotal is CheckoutSession.PaymentFeeTotals paymentFeeTotals)
+                    {
+                        if (paymentFeeTotals.Amount is CheckoutSession.Amount paymentFeeAmount)
+                            return paymentFeeAmount.ExcludingTax;
+                    }
+                }
+            }
+
+            //or recalculate it
             var result = await paymentMethod.GetAdditionalHandlingFeeAsync(cart);
             if (result < decimal.Zero)
                 result = decimal.Zero;
 
-            if (!_shoppingCartSettings.RoundPricesDuringCalculation)
-                return result;
+            if (_shoppingCartSettings.RoundPricesDuringCalculation)
+                result = await _priceCalculationService.RoundPriceAsync(result);
 
-            result = await _priceCalculationService.RoundPriceAsync(result);
+            //save value in the checkout session
+            checkoutSession.PaymentFeeTotal = new()
+            {
+                Amount = new() { ExcludingTax = result }
+            };
+            await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSession);
 
             return result;
         }

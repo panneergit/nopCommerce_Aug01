@@ -38,6 +38,7 @@ namespace Nop.Services.Orders
         protected readonly IActionContextAccessor _actionContextAccessor;
         protected readonly IAttributeParser<CheckoutAttribute, CheckoutAttributeValue> _checkoutAttributeParser;
         protected readonly IAttributeService<CheckoutAttribute, CheckoutAttributeValue> _checkoutAttributeService;
+        protected readonly ICheckoutSessionService _checkoutSessionService;
         protected readonly ICurrencyService _currencyService;
         protected readonly ICustomerService _customerService;
         protected readonly IDateRangeService _dateRangeService;
@@ -72,6 +73,7 @@ namespace Nop.Services.Orders
             IActionContextAccessor actionContextAccessor,
             IAttributeParser<CheckoutAttribute, CheckoutAttributeValue> checkoutAttributeParser,
             IAttributeService<CheckoutAttribute, CheckoutAttributeValue> checkoutAttributeService,
+            ICheckoutSessionService checkoutSessionService,
             ICurrencyService currencyService,
             ICustomerService customerService,
             IDateRangeService dateRangeService,
@@ -102,6 +104,7 @@ namespace Nop.Services.Orders
             _actionContextAccessor = actionContextAccessor;
             _checkoutAttributeParser = checkoutAttributeParser;
             _checkoutAttributeService = checkoutAttributeService;
+            _checkoutSessionService = checkoutSessionService;
             _currencyService = currencyService;
             _customerService = customerService;
             _dateRangeService = dateRangeService;
@@ -583,11 +586,9 @@ namespace Nop.Services.Orders
         /// Delete shopping cart item
         /// </summary>
         /// <param name="shoppingCartItem">Shopping cart item</param>
-        /// <param name="resetCheckoutData">A value indicating whether to reset checkout data</param>
         /// <param name="ensureOnlyActiveCheckoutAttributes">A value indicating whether to ensure that only active checkout attributes are attached to the current customer</param>
         /// <returns>A task that represents the asynchronous operation</returns>
-        public virtual async Task DeleteShoppingCartItemAsync(ShoppingCartItem shoppingCartItem, bool resetCheckoutData = true,
-            bool ensureOnlyActiveCheckoutAttributes = false)
+        public virtual async Task DeleteShoppingCartItemAsync(ShoppingCartItem shoppingCartItem, bool ensureOnlyActiveCheckoutAttributes = false)
         {
             if (shoppingCartItem == null)
                 throw new ArgumentNullException(nameof(shoppingCartItem));
@@ -596,8 +597,7 @@ namespace Nop.Services.Orders
             var storeId = shoppingCartItem.StoreId;
 
             //reset checkout data
-            if (resetCheckoutData)
-                await _customerService.ResetCheckoutDataAsync(customer, shoppingCartItem.StoreId);
+            await _customerService.ResetCheckoutDataAsync(customer, shoppingCartItem.StoreId);
 
             //delete item
             await _sciRepository.DeleteAsync(shoppingCartItem);
@@ -612,14 +612,12 @@ namespace Nop.Services.Orders
                 shoppingCartItem.ShoppingCartType == ShoppingCartType.ShoppingCart)
             {
                 var cart = await GetShoppingCartAsync(customer, ShoppingCartType.ShoppingCart, storeId);
+                var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, storeId);
 
-                var checkoutAttributesXml =
-                    await _genericAttributeService.GetAttributeAsync<string>(customer, NopCustomerDefaults.CheckoutAttributes,
-                        storeId);
-                checkoutAttributesXml =
-                    await _checkoutAttributeParser.EnsureOnlyActiveAttributesAsync(checkoutAttributesXml, cart);
-                await _genericAttributeService.SaveAttributeAsync(customer, NopCustomerDefaults.CheckoutAttributes,
-                    checkoutAttributesXml, storeId);
+                var checkoutAttributesXml = checkoutSession.CheckoutAttributes;
+                checkoutAttributesXml = await _checkoutAttributeParser.EnsureOnlyActiveAttributesAsync(checkoutAttributesXml, cart);
+                checkoutSession.CheckoutAttributes = checkoutAttributesXml;
+                await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSession);
             }
 
             if (!_catalogSettings.RemoveRequiredProducts)
@@ -642,9 +640,21 @@ namespace Nop.Services.Orders
                 var requiredProductQuantity = 1;
 
                 await UpdateShoppingCartItemAsync(customer, cartItem.Id, cartItem.AttributesXml, cartItem.CustomerEnteredPrice,
-                    quantity: cartItem.Quantity - shoppingCartItem.Quantity * requiredProductQuantity,
-                    resetCheckoutData: false);
+                    quantity: cartItem.Quantity - shoppingCartItem.Quantity * requiredProductQuantity);
             }
+        }
+
+        /// <summary>
+        /// Delete shopping cart item
+        /// </summary>
+        /// <param name="shoppingCartItemId">Shopping cart item ID</param>
+        /// <param name="ensureOnlyActiveCheckoutAttributes">A value indicating whether to ensure that only active checkout attributes are attached to the current customer</param>
+        /// <returns>A task that represents the asynchronous operation</returns>
+        public virtual async Task DeleteShoppingCartItemAsync(int shoppingCartItemId, bool ensureOnlyActiveCheckoutAttributes = false)
+        {
+            var shoppingCartItem = await _sciRepository.Table.FirstOrDefaultAsync(sci => sci.Id == shoppingCartItemId);
+            if (shoppingCartItem != null)
+                await DeleteShoppingCartItemAsync(shoppingCartItem, ensureOnlyActiveCheckoutAttributes);
         }
 
         /// <summary>
@@ -667,21 +677,6 @@ namespace Nop.Services.Orders
             //reset "HasShoppingCartItems" property used for performance optimization
             customer.HasShoppingCartItems = !IsCustomerShoppingCartEmpty(customer);
             await _customerService.UpdateCustomerAsync(customer);
-        }
-
-        /// <summary>
-        /// Delete shopping cart item
-        /// </summary>
-        /// <param name="shoppingCartItemId">Shopping cart item ID</param>
-        /// <param name="resetCheckoutData">A value indicating whether to reset checkout data</param>
-        /// <param name="ensureOnlyActiveCheckoutAttributes">A value indicating whether to ensure that only active checkout attributes are attached to the current customer</param>
-        /// <returns>A task that represents the asynchronous operation</returns>
-        public virtual async Task DeleteShoppingCartItemAsync(int shoppingCartItemId, bool resetCheckoutData = true,
-            bool ensureOnlyActiveCheckoutAttributes = false)
-        {
-            var shoppingCartItem = await _sciRepository.Table.FirstOrDefaultAsync(sci => sci.Id == shoppingCartItemId);
-            if (shoppingCartItem != null)
-                await DeleteShoppingCartItemAsync(shoppingCartItem, resetCheckoutData, ensureOnlyActiveCheckoutAttributes);
         }
 
         /// <summary>
@@ -1733,7 +1728,6 @@ namespace Nop.Services.Orders
         /// <param name="rentalStartDate">Rental start date</param>
         /// <param name="rentalEndDate">Rental end date</param>
         /// <param name="quantity">New shopping cart item quantity</param>
-        /// <param name="resetCheckoutData">A value indicating whether to reset checkout data</param>
         /// <returns>
         /// A task that represents the asynchronous operation
         /// The task result contains the warnings
@@ -1742,7 +1736,7 @@ namespace Nop.Services.Orders
             int shoppingCartItemId, string attributesXml,
             decimal customerEnteredPrice,
             DateTime? rentalStartDate = null, DateTime? rentalEndDate = null,
-            int quantity = 1, bool resetCheckoutData = true)
+            int quantity = 1)
         {
             if (customer == null)
                 throw new ArgumentNullException(nameof(customer));
@@ -1754,11 +1748,8 @@ namespace Nop.Services.Orders
             if (shoppingCartItem == null || shoppingCartItem.CustomerId != customer.Id)
                 return warnings;
 
-            if (resetCheckoutData)
-            {
-                //reset checkout data
-                await _customerService.ResetCheckoutDataAsync(customer, shoppingCartItem.StoreId);
-            }
+            //reset checkout data
+            await _customerService.ResetCheckoutDataAsync(customer, shoppingCartItem.StoreId);
 
             var product = await _productService.GetProductByIdAsync(shoppingCartItem.ProductId);
 
@@ -1792,7 +1783,7 @@ namespace Nop.Services.Orders
                     return warnings;
 
                 //delete a shopping cart item
-                await DeleteShoppingCartItemAsync(shoppingCartItem, resetCheckoutData, true);
+                await DeleteShoppingCartItemAsync(shoppingCartItem, true);
             }
 
             return warnings;
@@ -1851,8 +1842,10 @@ namespace Nop.Services.Orders
 
             //move selected checkout attributes
             var store = await _storeContext.GetCurrentStoreAsync();
-            var checkoutAttributesXml = await _genericAttributeService.GetAttributeAsync<string>(fromCustomer, NopCustomerDefaults.CheckoutAttributes, store.Id);
-            await _genericAttributeService.SaveAttributeAsync(toCustomer, NopCustomerDefaults.CheckoutAttributes, checkoutAttributesXml, store.Id);
+            var checkoutSessionFrom = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(fromCustomer.Id, store.Id);
+            var checkoutSessionTo = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(toCustomer.Id, store.Id);
+            checkoutSessionTo.CheckoutAttributes = checkoutSessionFrom.CheckoutAttributes;
+            await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSessionTo);
         }
 
         /// <summary>

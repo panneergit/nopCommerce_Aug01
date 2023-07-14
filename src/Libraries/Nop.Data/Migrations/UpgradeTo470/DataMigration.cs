@@ -1,7 +1,13 @@
 ﻿using FluentMigrator;
+using Newtonsoft.Json;
+using Nop.Core;
 using Nop.Core.Domain.Catalog;
+using Nop.Core.Domain.Common;
+using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Logging;
 using Nop.Core.Domain.Media;
+using Nop.Core.Domain.Orders;
+using Nop.Core.Domain.Shipping;
 
 namespace Nop.Data.Migrations.UpgradeTo470
 {
@@ -128,6 +134,76 @@ namespace Nop.Data.Migrations.UpgradeTo470
 
                     pageIndex++;
                 }
+            }
+
+            //#
+            pageIndex = 0;
+            var customerTable = _dataProvider.GetTable<Customer>();
+            var genericAttributeTable = _dataProvider.GetTable<GenericAttribute>();
+            var attributeKeys = new[] { "CheckoutAttributes", "DiscountCouponCode", "GiftCardCouponCodes", "UseRewardPointsDuringCheckout", 
+                "SelectedPaymentMethod", "SelectedShippingOption", "SelectedPickupPoint", "OfferedShippingOptions" };
+            while (true)
+            {
+                var customers = customerTable.Where(customer => !customer.Deleted).ToPagedListAsync(pageIndex++, pageSize).Result;
+                if (!customers.Any())
+                    break;
+
+                var customerIds = customers.Select(customer => customer.Id).ToList();
+                var genericAttributes = genericAttributeTable
+                    .Where(attribute => attribute.KeyGroup == nameof(Customer) && customerIds.Contains(attribute.EntityId) && attributeKeys.Contains(attribute.Key))
+                    .ToList();
+                if (!genericAttributes.Any())
+                    continue;
+
+                var newAttributes = new List<GenericAttribute>();
+
+                foreach (var customer in customers)
+                {
+                    var customerAttributes = genericAttributes.Where(attribute => attribute.EntityId == customer.Id).ToList();
+                    if (!customerAttributes.Any())
+                        continue;
+
+                    var storeIds = customerAttributes.Select(attribute => attribute.StoreId).Distinct().ToList();
+                    foreach (var storeId in storeIds)
+                    {
+                        var attributes = customerAttributes.Where(attribute => attribute.StoreId == storeId).ToList();
+                        if (!attributes.Any())
+                            continue;
+
+                        var useRewardPoints = attributes.FirstOrDefault(attribute => attribute.Key == "UseRewardPointsDuringCheckout")?.Value;
+                        var pickupPoint = attributes.FirstOrDefault(attribute => attribute.Key == "SelectedPickupPoint")?.Value;
+                        var shippingOption = attributes.FirstOrDefault(attribute => attribute.Key == "SelectedShippingOption")?.Value;
+                        var shippingOptions = attributes.FirstOrDefault(attribute => attribute.Key == "OfferedShippingOptions")?.Value;
+                        var checkoutSession = new CheckoutSession
+                        {
+                            CustomerId = customer.Id,
+                            StoreId = storeId,
+                            BillingAddressId = customer.BillingAddressId ?? 0,
+                            ShippingAddressId = customer.ShippingAddressId ?? 0,
+                            CheckoutAttributes = attributes.FirstOrDefault(attribute => attribute.Key == "CheckoutAttributes")?.Value,
+                            DiscountCouponCodes = attributes.FirstOrDefault(attribute => attribute.Key == "DiscountCouponCode")?.Value,
+                            GiftCardCouponCodes = attributes.FirstOrDefault(attribute => attribute.Key == "GiftCardCouponCodes")?.Value,
+                            SelectedPaymentMethod = attributes.FirstOrDefault(attribute => attribute.Key == "SelectedPaymentMethod")?.Value,
+                            UseRewardPoints = string.Equals(useRewardPoints, true.ToString(), StringComparison.InvariantCultureIgnoreCase),
+                            SelectedPickupPoint = CommonHelper.To<PickupPoint>(pickupPoint),
+                            SelectedShippingOption = CommonHelper.To<ShippingOption>(shippingOption),
+                            OfferedShippingOptions = CommonHelper.To<List<ShippingOption>>(shippingOptions)
+                        };
+                        var value = JsonConvert.SerializeObject(checkoutSession, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
+                        newAttributes.Add(new() 
+                        {
+                            Key = NopCustomerDefaults.CheckoutSession,
+                            KeyGroup = nameof(Customer),
+                            EntityId = customer.Id,
+                            StoreId = storeId,
+                            Value = value,
+                            CreatedOrUpdatedDateUTC = DateTime.UtcNow
+                        });
+                    }
+                }
+
+                _dataProvider.BulkInsertEntities(newAttributes);
+                _dataProvider.BulkDeleteEntities(genericAttributes);
             }
         }
 

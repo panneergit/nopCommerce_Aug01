@@ -42,6 +42,7 @@ namespace Nop.Services.Orders
         protected readonly IAddressService _addressService;
         protected readonly IAffiliateService _affiliateService;
         protected readonly ICheckoutAttributeFormatter _checkoutAttributeFormatter;
+        protected readonly ICheckoutSessionService _checkoutSessionService;
         protected readonly ICountryService _countryService;
         protected readonly ICurrencyService _currencyService;
         protected readonly ICustomerActivityService _customerActivityService;
@@ -92,6 +93,7 @@ namespace Nop.Services.Orders
             IAddressService addressService,
             IAffiliateService affiliateService,
             ICheckoutAttributeFormatter checkoutAttributeFormatter,
+            ICheckoutSessionService checkoutSessionService,
             ICountryService countryService,
             ICurrencyService currencyService,
             ICustomerActivityService customerActivityService,
@@ -138,6 +140,7 @@ namespace Nop.Services.Orders
             _addressService = addressService;
             _affiliateService = affiliateService;
             _checkoutAttributeFormatter = checkoutAttributeFormatter;
+            _checkoutSessionService = checkoutSessionService;
             _countryService = countryService;
             _currencyService = currencyService;
             _customerActivityService = customerActivityService;
@@ -344,7 +347,7 @@ namespace Nop.Services.Orders
             details.OrderSubTotalDiscountExclTax = discountAmountExclTax;
 
             //shipping total
-            var (orderShippingTotalInclTax, orderShippingTotalExclTax, _, shippingTotalDiscounts) = await _orderTotalCalculationService.GetShoppingCartShippingTotalsAsync(details.Cart);
+            var (orderShippingTotalInclTax, orderShippingTotalExclTax, _, shippingTotalDiscounts) = await _orderTotalCalculationService.GetShoppingCartShippingTotalAsync(details.Cart);
 
             if (!orderShippingTotalInclTax.HasValue || !orderShippingTotalExclTax.HasValue)
                 throw new NopException("Shipping total couldn't be calculated");
@@ -404,8 +407,9 @@ namespace Nop.Services.Orders
             //shipping info
             if (await _shoppingCartService.ShoppingCartRequiresShippingAsync(details.Cart))
             {
-                var pickupPoint = await _genericAttributeService.GetAttributeAsync<PickupPoint>(details.Customer,
-                    NopCustomerDefaults.SelectedPickupPointAttribute, processPaymentRequest.StoreId);
+                var checkoutSession = await _checkoutSessionService
+                    .GetCustomerCheckoutSessionAsync(details.Customer.Id, processPaymentRequest.StoreId);
+                var pickupPoint = checkoutSession.SelectedPickupPoint;
                 if (_shippingSettings.AllowPickupInStore && pickupPoint != null)
                 {
                     var country = await _countryService.GetCountryByTwoLetterIsoCodeAsync(pickupPoint.CountryCode);
@@ -440,9 +444,8 @@ namespace Nop.Services.Orders
                         throw new NopException($"Country '{shippingCountry.Name}' is not allowed for shipping");
                 }
 
-                var shippingOption = await _genericAttributeService.GetAttributeAsync<ShippingOption>(details.Customer,
-                    NopCustomerDefaults.SelectedShippingOptionAttribute, processPaymentRequest.StoreId);
-                if (shippingOption != null)
+                var shippingOption = checkoutSession.SelectedShippingOption;
+                if (shippingOption is not null)
                 {
                     details.ShippingMethodName = shippingOption.Name;
                     details.ShippingRateComputationMethodSystemName = shippingOption.ShippingRateComputationMethodSystemName;
@@ -465,7 +468,8 @@ namespace Nop.Services.Orders
         protected virtual async Task PrepareAndValidateShoppingCartAndCheckoutAttributesAsync(PlaceOrderContainer details, ProcessPaymentRequest processPaymentRequest, Currency currentCurrency)
         {
             //checkout attributes
-            details.CheckoutAttributesXml = await _genericAttributeService.GetAttributeAsync<string>(details.Customer, NopCustomerDefaults.CheckoutAttributes, processPaymentRequest.StoreId);
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(details.Customer.Id, processPaymentRequest.StoreId);
+            details.CheckoutAttributesXml = checkoutSession.CheckoutAttributes;
             details.CheckoutAttributeDescription = await _checkoutAttributeFormatter.FormatAttributesAsync(details.CheckoutAttributesXml, details.Customer);
 
             //load shopping cart
@@ -1551,7 +1555,10 @@ namespace Nop.Services.Orders
                     await SendNotificationsAndSaveNotesAsync(order);
 
                     //reset checkout data
-                    await _customerService.ResetCheckoutDataAsync(details.Customer, processPaymentRequest.StoreId, clearCouponCodes: true, clearCheckoutAttributes: true);
+                    var checkoutSession = await _checkoutSessionService
+                        .GetCustomerCheckoutSessionAsync(details.Customer.Id, processPaymentRequest.StoreId);
+                    await _checkoutSessionService.DeleteCheckoutSessionAsync(checkoutSession);
+
                     await _customerActivityService.InsertActivityAsync("PublicStore.PlaceOrder",
                         string.Format(await _localizationService.GetResourceAsync("ActivityLog.PublicStore.PlaceOrder"), order.Id), order);
 
@@ -3037,7 +3044,9 @@ namespace Nop.Services.Orders
 
             //set checkout attributes
             //comment the code below if you want to disable this functionality
-            await _genericAttributeService.SaveAttributeAsync(customer, NopCustomerDefaults.CheckoutAttributes, order.CheckoutAttributesXml, order.StoreId);
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, order.StoreId);
+            checkoutSession.CheckoutAttributes = order.CheckoutAttributesXml;
+            await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSession);
 
             return warnings;
         }

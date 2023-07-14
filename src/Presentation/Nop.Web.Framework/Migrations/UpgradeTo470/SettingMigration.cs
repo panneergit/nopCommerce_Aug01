@@ -1,6 +1,7 @@
 ﻿using FluentMigrator;
 using Nop.Core.Domain.Common;
 using Nop.Core.Domain.Customers;
+using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Security;
 using Nop.Core.Domain.Tax;
 using Nop.Core.Infrastructure;
@@ -96,6 +97,14 @@ namespace Nop.Web.Framework.Migrations.UpgradeTo470
             }
 
             settingService.SaveSetting(robotsTxtSettings, settings => settings.DisallowPaths);
+
+            //#
+            var orderSettings = settingService.LoadSetting<OrderSettings>();
+            if (!settingService.SettingExists(orderSettings, settings => settings.UseCheckoutSession))
+            {
+                orderSettings.UseCheckoutSession = true;
+                settingService.SaveSetting(orderSettings, settings => settings.UseCheckoutSession);
+            }
         }
 
         public override void Down()

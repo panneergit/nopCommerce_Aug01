@@ -32,6 +32,7 @@ namespace Nop.Web.Factories
         protected readonly CommonSettings _commonSettings;
         protected readonly IAddressModelFactory _addressModelFactory;
         protected readonly IAddressService _addressService;
+        protected readonly ICheckoutSessionService _checkoutSessionService;
         protected readonly ICountryService _countryService;
         protected readonly ICurrencyService _currencyService;
         protected readonly ICustomerService _customerService;
@@ -67,6 +68,7 @@ namespace Nop.Web.Factories
             CommonSettings commonSettings,
             IAddressModelFactory addressModelFactory,
             IAddressService addressService,
+            ICheckoutSessionService checkoutSessionService,
             ICountryService countryService,
             ICurrencyService currencyService,
             ICustomerService customerService,
@@ -98,6 +100,7 @@ namespace Nop.Web.Factories
             _commonSettings = commonSettings;
             _addressModelFactory = addressModelFactory;
             _addressService = addressService;
+            _checkoutSessionService = checkoutSessionService;
             _countryService = countryService;
             _currencyService = currencyService;
             _customerService = customerService;
@@ -147,10 +150,13 @@ namespace Nop.Web.Factories
             if (!model.AllowPickupInStore)
                 return model;
 
-            model.DisplayPickupPointsOnMap = _shippingSettings.DisplayPickupPointsOnMap;
-            model.GoogleMapsApiKey = _shippingSettings.GoogleMapsApiKey;
             var customer = await _workContext.GetCurrentCustomerAsync();
             var store = await _storeContext.GetCurrentStoreAsync();
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
+
+            model.DisplayPickupPointsOnMap = _shippingSettings.DisplayPickupPointsOnMap;
+            model.GoogleMapsApiKey = _shippingSettings.GoogleMapsApiKey;
+            
             var pickupPointProviders = await _pickupPluginManager.LoadActivePluginsAsync(customer, store.Id);
             if (pickupPointProviders.Any())
             {
@@ -162,14 +168,9 @@ namespace Nop.Web.Factories
                     customer, storeId: store.Id);
                 if (pickupPointsResponse.Success)
                 {
-                    var selectedPickupPoint = await _genericAttributeService
-                        .GetAttributeAsync<PickupPoint>(customer, NopCustomerDefaults.SelectedPickupPointAttribute, store.Id);
-
-                    var selectedShippingOption = await _genericAttributeService
-                        .GetAttributeAsync<ShippingOption>(customer, NopCustomerDefaults.SelectedShippingOptionAttribute, store.Id);
-
+                    var selectedPickupPoint = checkoutSession.SelectedPickupPoint;
+                    var selectedShippingOption = checkoutSession.SelectedShippingOption;
                     model.PickupInStore = selectedShippingOption is not null && selectedShippingOption.IsPickupInStore;
-
                     model.PickupPoints = await pickupPointsResponse.PickupPoints.SelectAwait(async point =>
                     {
                         var country = await _countryService.GetCountryByTwoLetterIsoCodeAsync(point.CountryCode);
@@ -399,15 +400,15 @@ namespace Nop.Web.Factories
 
             var customer = await _workContext.GetCurrentCustomerAsync();
             var store = await _storeContext.GetCurrentStoreAsync();
+
             var getShippingOptionResponse = await _shippingService.GetShippingOptionsAsync(cart, shippingAddress, customer, storeId: store.Id);
             if (getShippingOptionResponse.Success)
             {
                 //performance optimization. cache returned shipping options.
                 //we'll use them later (after a customer has selected an option).
-                await _genericAttributeService.SaveAttributeAsync(customer,
-                                                       NopCustomerDefaults.OfferedShippingOptionsAttribute,
-                                                       getShippingOptionResponse.ShippingOptions,
-                                                       store.Id);
+                var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
+                checkoutSession.OfferedShippingOptions = getShippingOptionResponse.ShippingOptions?.ToList();
+                await _checkoutSessionService.UpdateCheckoutSessionAsync(checkoutSession);
 
                 foreach (var shippingOption in getShippingOptionResponse.ShippingOptions)
                 {
@@ -441,9 +442,8 @@ namespace Nop.Web.Factories
                 }
 
                 //find a selected (previously) shipping method
-                var selectedShippingOption = await _genericAttributeService.GetAttributeAsync<ShippingOption>(customer,
-                        NopCustomerDefaults.SelectedShippingOptionAttribute, store.Id);
-                if (selectedShippingOption != null)
+                var selectedShippingOption = checkoutSession.SelectedShippingOption;
+                if (selectedShippingOption is not null)
                 {
                     var shippingOptionToSelect = model.ShippingMethods.ToList()
                         .Find(so =>
@@ -496,6 +496,7 @@ namespace Nop.Web.Factories
 
             var customer = await _workContext.GetCurrentCustomerAsync();
             var store = await _storeContext.GetCurrentStoreAsync();
+            var checkoutSession = await _checkoutSessionService.GetCustomerCheckoutSessionAsync(customer.Id, store.Id);
 
             //reward points
             if (_rewardPointsSettings.Enabled && !await _shoppingCartService.ShoppingCartIsRecurringAsync(cart))
@@ -543,13 +544,11 @@ namespace Nop.Web.Factories
             }
 
             //find a selected (previously) payment method
-            var selectedPaymentMethodSystemName = await _genericAttributeService.GetAttributeAsync<string>(customer,
-                NopCustomerDefaults.SelectedPaymentMethodAttribute, store.Id);
-            if (!string.IsNullOrEmpty(selectedPaymentMethodSystemName))
+            if (!string.IsNullOrEmpty(checkoutSession.SelectedPaymentMethod))
             {
                 var paymentMethodToSelect = model.PaymentMethods.ToList()
-                    .Find(pm => pm.PaymentMethodSystemName.Equals(selectedPaymentMethodSystemName, StringComparison.InvariantCultureIgnoreCase));
-                if (paymentMethodToSelect != null)
+                    .Find(pm => pm.PaymentMethodSystemName.Equals(checkoutSession.SelectedPaymentMethod, StringComparison.InvariantCultureIgnoreCase));
+                if (paymentMethodToSelect is not null)
                     paymentMethodToSelect.Selected = true;
             }
             //if no option has been selected, let's do it for the first one

@@ -61,31 +61,9 @@ namespace Nop.Services.Orders
         /// <param name="cart">Cart</param>
         /// <returns>
         /// A task that represents the asynchronous operation
-        /// The task result contains the shipping total
+        /// The task result contains the shipping total (including/excluding tax); applied tax rate; applied discounts
         /// </returns>
-        Task<decimal?> GetShoppingCartShippingTotalAsync(IList<ShoppingCartItem> cart);
-
-        /// <summary>
-        /// Gets shopping cart shipping total
-        /// </summary>
-        /// <param name="cart">Cart</param>
-        /// <param name="includingTax">A value indicating whether calculated price should include tax</param>
-        /// <returns>
-        /// A task that represents the asynchronous operation
-        /// The task result contains the shipping total. Applied tax rate. Applied discounts
-        /// </returns>
-        Task<(decimal? shippingTotal, decimal taxRate, List<Discount> appliedDiscounts)> GetShoppingCartShippingTotalAsync(
-            IList<ShoppingCartItem> cart, bool includingTax);
-
-        /// <summary>
-        /// Gets shopping cart shipping total
-        /// </summary>
-        /// <param name="cart">Cart</param>
-        /// <returns>
-        /// A task that represents the asynchronous operation
-        /// The task result contains the shipping total. Applied tax rate. Applied discounts
-        /// </returns>
-        Task<(decimal? shippingTotalInclTax, decimal? shippingTotaExclTax, decimal taxRate, List<Discount> appliedDiscounts)> GetShoppingCartShippingTotalsAsync(
+        Task<(decimal? shippingTotalInclTax, decimal? shippingTotaExclTax, decimal taxRate, List<Discount> appliedDiscounts)> GetShoppingCartShippingTotalAsync(
             IList<ShoppingCartItem> cart);
 
         /// <summary>

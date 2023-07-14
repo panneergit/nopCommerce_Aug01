@@ -187,5 +187,10 @@ namespace Nop.Core.Domain.Orders
         /// Gets or sets a value indicating whether "Summary" block should be displayed on the order list table
         /// </summary>
         public bool DisplayOrderSummary { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether to use checkout session which can reduce checkout calculations
+        /// </summary>
+        public bool UseCheckoutSession { get; set; }
     }
 }
