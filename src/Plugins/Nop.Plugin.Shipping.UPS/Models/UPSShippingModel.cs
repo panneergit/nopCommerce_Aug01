@@ -28,14 +28,11 @@ namespace Nop.Plugin.Shipping.UPS.Models
         [NopResourceDisplayName("Plugins.Shipping.UPS.Fields.AccountNumber")]
         public string AccountNumber { get; set; }
 
-        [NopResourceDisplayName("Plugins.Shipping.UPS.Fields.AccessKey")]
-        public string AccessKey { get; set; }
+        [NopResourceDisplayName("Plugins.Shipping.UPS.Fields.ClientId")]
+        public string ClientId { get; set; }
 
-        [NopResourceDisplayName("Plugins.Shipping.UPS.Fields.Username")]
-        public string Username { get; set; }
-
-        [NopResourceDisplayName("Plugins.Shipping.UPS.Fields.Password")]
-        public string Password { get; set; }
+        [NopResourceDisplayName("Plugins.Shipping.UPS.Fields.ClientSecret")]
+        public string ClientSecret { get; set; }
 
         [NopResourceDisplayName("Plugins.Shipping.UPS.Fields.UseSandbox")]
         public bool UseSandbox { get; set; }
