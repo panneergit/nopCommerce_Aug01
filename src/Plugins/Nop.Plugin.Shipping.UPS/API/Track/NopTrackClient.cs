@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Net.Http;
 using Nop.Plugin.Shipping.UPS.Services;
+using Newtonsoft.Json;
 
 namespace Nop.Plugin.Shipping.UPS.API.Track
 {
@@ -40,6 +41,11 @@ namespace Nop.Plugin.Shipping.UPS.API.Track
                 _upsSettings.UseSandbox ? "testing" : UPSDefaults.SystemName, string.Empty);
 
             return response.TrackResponse;
+        }
+
+        partial void UpdateJsonSerializerSettings(JsonSerializerSettings settings)
+        {
+            settings.ContractResolver = new NullToEmptyStringResolver();
         }
     }
 }

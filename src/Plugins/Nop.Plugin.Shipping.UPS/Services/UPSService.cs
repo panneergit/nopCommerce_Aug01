@@ -13,6 +13,7 @@ using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Directory;
 using Nop.Core.Domain.Orders;
 using Nop.Core.Domain.Shipping;
+using Nop.Core.Http;
 using Nop.Plugin.Shipping.UPS.API.OAuth;
 using Nop.Plugin.Shipping.UPS.API.Rates;
 using Nop.Plugin.Shipping.UPS.API.Track;
@@ -54,7 +55,7 @@ namespace Nop.Plugin.Shipping.UPS.Services
         #region Fields
 
         private readonly CurrencySettings _currencySettings;
-        private readonly HttpClient _httpClient;
+        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ICountryService _countryService;
         private readonly ICurrencyService _currencyService;
         private readonly ILocalizationService _localizationService;
@@ -78,7 +79,7 @@ namespace Nop.Plugin.Shipping.UPS.Services
         #region Ctor
 
         public UPSService(CurrencySettings currencySettings,
-            HttpClient httpClient,
+            IHttpClientFactory httpClientFactory,
             ICountryService countryService,
             ICurrencyService currencyService,
             ILocalizationService localizationService,
@@ -91,7 +92,7 @@ namespace Nop.Plugin.Shipping.UPS.Services
             UPSSettings upsSettings)
         {
             _currencySettings = currencySettings;
-            _httpClient = httpClient;
+            _httpClientFactory = httpClientFactory;
             _countryService = countryService;
             _currencyService = currencyService;
             _localizationService = localizationService;
@@ -123,7 +124,7 @@ namespace Nop.Plugin.Shipping.UPS.Services
             if (string.IsNullOrEmpty(_upsSettings.ClientSecret))
                 throw new NopException("Client secret is not set");
 
-            var client = new OAuthClient(_httpClient, _upsSettings);
+            var client = new OAuthClient(_httpClientFactory.CreateClient(NopHttpDefaults.DefaultHttpClient), _upsSettings);
 
             var response = await client.GenerateTokenAsync();
             _accessToken = response.Access_token;
@@ -191,7 +192,7 @@ namespace Nop.Plugin.Shipping.UPS.Services
         /// </returns>
         private async Task<TrackResponse> TrackAsync(string trackingNumber)
         {
-            var client = new TrackClient(_httpClient, _upsSettings, await GetAccessTokenAsync());
+            var client = new TrackClient(_httpClientFactory.CreateClient(NopHttpDefaults.DefaultHttpClient), _upsSettings, await GetAccessTokenAsync());
 
             var trackResponse = await client.TrackAsync(trackingNumber);
 
@@ -295,7 +296,7 @@ namespace Nop.Plugin.Shipping.UPS.Services
         /// </returns>
         private async Task<RateResponse> GetRatesAsync(RateRequest request)
         {
-            var client = new RateClient(_httpClient, _upsSettings, await GetAccessTokenAsync());
+            var client = new RateClient(_httpClientFactory.CreateClient(NopHttpDefaults.DefaultHttpClient), _upsSettings, await GetAccessTokenAsync());
 
             //try to get response details
             var response = await client.ProcessRateAsync(request);
@@ -343,7 +344,7 @@ namespace Nop.Plugin.Shipping.UPS.Services
             {
                 AddressLine = shippingOptionRequest.AddressFrom,
                 City = shippingOptionRequest.CityFrom,
-                StateProvinceCode = stateCodeFrom,
+                StateProvinceCode = stateCodeFrom ,
                 CountryCode = countryCodeFrom,
                 PostalCode = shippingOptionRequest.ZipPostalCodeFrom
             };

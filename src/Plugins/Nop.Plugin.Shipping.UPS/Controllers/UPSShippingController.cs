@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Nop.Plugin.Shipping.UPS.Domain;
 using Nop.Plugin.Shipping.UPS.Models;
+using Nop.Plugin.Shipping.UPS.Services;
 //using Nop.Plugin.Shipping.UPS.Services;
 using Nop.Services;
 using Nop.Services.Configuration;
@@ -31,7 +32,7 @@ namespace Nop.Plugin.Shipping.UPS.Controllers
         private readonly INotificationService _notificationService;
         private readonly IPermissionService _permissionService;
         private readonly ISettingService _settingService;
-        //private readonly UPSService _upsService;
+        private readonly UPSService _upsService;
         private readonly UPSSettings _upsSettings;
 
         #endregion
@@ -43,7 +44,7 @@ namespace Nop.Plugin.Shipping.UPS.Controllers
             INotificationService notificationService,
             IPermissionService permissionService,
             ISettingService settingService,
-            //UPSService upsService,
+            UPSService upsService,
             UPSSettings upsSettings)
         {
             _localizationService = localizationService;
@@ -51,7 +52,7 @@ namespace Nop.Plugin.Shipping.UPS.Controllers
             _notificationService = notificationService;
             _permissionService = permissionService;
             _settingService = settingService;
-            //_upsService = upsService;
+            _upsService = upsService;
             _upsSettings = upsSettings;
         }
 
@@ -102,8 +103,8 @@ namespace Nop.Plugin.Shipping.UPS.Controllers
             model.AvailableCarrierServices = (await DeliveryService.Standard.ToSelectListAsync(false))
                 .Select(item =>
             {
-                //var serviceCode = _upsService.GetUpsCode((DeliveryService)int.Parse(item.Value));
-                return new SelectListItem($"UPS {item.Text?.TrimStart('_')}", /*serviceCode*/String.Empty, servicesCodes.Contains(/*serviceCode*/String.Empty));
+                var serviceCode = _upsService.GetUpsCode((DeliveryService)int.Parse(item.Value));
+                return new SelectListItem($"UPS {item.Text?.TrimStart('_')}", serviceCode, servicesCodes.Contains(serviceCode));
             }).ToList();
             model.AvaliableWeightTypes = new List<SelectListItem> { new SelectListItem("LBS", "LBS"), new SelectListItem("KGS", "KGS") };
             model.AvaliableDimensionsTypes = new List<SelectListItem> { new SelectListItem("IN", "IN"), new SelectListItem("CM", "CM") };
@@ -153,10 +154,10 @@ namespace Nop.Plugin.Shipping.UPS.Controllers
             {
                 model.CarrierServices = new List<string>
                 {
-                    /*_upsService.GetUpsCode(DeliveryService.Ground),
+                    _upsService.GetUpsCode(DeliveryService.Ground),
                     _upsService.GetUpsCode(DeliveryService.WorldwideExpedited),
                     _upsService.GetUpsCode(DeliveryService.Standard),
-                    _upsService.GetUpsCode(DeliveryService._3DaySelect)*/
+                    _upsService.GetUpsCode(DeliveryService._3DaySelect)
                 };
             }
             _upsSettings.CarrierServicesOffered = string.Join(':', model.CarrierServices.Select(service => $"[{service}]"));

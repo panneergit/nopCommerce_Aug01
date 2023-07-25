@@ -2,6 +2,7 @@
 using Microsoft.Net.Http.Headers;
 using System;
 using System.Net.Http;
+using System.Text;
 using Nop.Core.Infrastructure;
 using Nop.Services.Logging;
 using static System.TimeSpan;
@@ -25,10 +26,13 @@ namespace Nop.Plugin.Shipping.UPS.Services
             httpClient.Timeout = FromSeconds(upsSettings.RequestTimeout ?? UPSDefaults.RequestTimeout);
             httpClient.DefaultRequestHeaders.Add(HeaderNames.UserAgent, UPSDefaults.UserAgent);
 
-            request.Headers.Add(HeaderNames.Authorization,
-                string.IsNullOrEmpty(accessToken)
-                    ? $"Basic {upsSettings.ClientId}:{upsSettings.ClientSecret}"
-                    : $"Bearer {accessToken}");
+            if (!string.IsNullOrEmpty(accessToken))
+                request.Headers.Add(HeaderNames.Authorization,$"Bearer {accessToken}");
+            else
+            {
+                var base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{upsSettings.ClientId}:{upsSettings.ClientSecret}"));
+                request.Headers.Add(HeaderNames.Authorization, $"Basic {base64}");
+            }
 
             //save debug info
             if (!upsSettings.Tracing) 
