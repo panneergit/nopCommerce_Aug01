@@ -10,6 +10,7 @@ using Nop.Core.Domain.Customers;
 using Nop.Core.Domain.Discounts;
 using Nop.Core.Domain.Localization;
 using Nop.Core.Domain.Orders;
+using Nop.Core.Domain.Security;
 using Nop.Core.Domain.Shipping;
 using Nop.Core.Domain.Stores;
 using Nop.Core.Infrastructure;
@@ -955,10 +956,19 @@ namespace Nop.Services.Catalog
                 //search by category name if admin allows
                 if (_catalogSettings.AllowCustomersToSearchWithCategoryName)
                 {
+                    var categoryQuery = _categoryRepository.Table;
+
+                    if (!showHidden)
+                        categoryQuery = categoryQuery.Where(p => p.Published);
+                    else if (overridePublished.HasValue)
+                        categoryQuery = categoryQuery.Where(p => p.Published == overridePublished.Value);
+
+                    categoryQuery = await applyVisibilityConstraintsAsync(categoryQuery);
+
                     productsByKeywords = productsByKeywords.Union(
                         from pc in _productCategoryRepository.Table
-                        join c in _categoryRepository.Table on pc.CategoryId equals c.Id
-                        where c.Name.Contains(keywords)
+                        join c in categoryQuery on pc.CategoryId equals c.Id
+                        where c.Name.Contains(keywords) && !c.Deleted
                         select pc.ProductId
                     );
 
@@ -978,10 +988,19 @@ namespace Nop.Services.Catalog
                 //search by manufacturer name if admin allows
                 if (_catalogSettings.AllowCustomersToSearchWithManufacturerName)
                 {
+                    var manufacturerQuery = _manufacturerRepository.Table;
+
+                    if (!showHidden)
+                        manufacturerQuery = manufacturerQuery.Where(p => p.Published);
+                    else if (overridePublished.HasValue)
+                        manufacturerQuery = manufacturerQuery.Where(p => p.Published == overridePublished.Value);
+
+                    manufacturerQuery = await applyVisibilityConstraintsAsync(manufacturerQuery);
+
                     productsByKeywords = productsByKeywords.Union(
                         from pm in _productManufacturerRepository.Table
-                        join m in _manufacturerRepository.Table on pm.ManufacturerId equals m.Id
-                        where m.Name.Contains(keywords)
+                        join m in manufacturerQuery on pm.ManufacturerId equals m.Id
+                        where m.Name.Contains(keywords) && !m.Deleted
                         select pm.ProductId
                     );
 
@@ -1112,6 +1131,24 @@ namespace Nop.Services.Catalog
             }
 
             return await productsQuery.OrderBy(_localizedPropertyRepository, await _workContext.GetWorkingLanguageAsync(), orderBy).ToPagedListAsync(pageIndex, pageSize);
+
+            async Task<IQueryable<TEntity>> applyVisibilityConstraintsAsync<TEntity>(IQueryable<TEntity> query) where TEntity : BaseEntity, IStoreMappingSupported, IAclSupported
+            {
+                if (!showHidden || storeId > 0)
+                {
+                    //apply store mapping constraints
+                    query = await _storeMappingService.ApplyStoreMapping(query, storeId);
+                }
+
+                if (!showHidden)
+                {
+                    //apply ACL constraints
+                    var customer = await _workContext.GetCurrentCustomerAsync();
+                    query = await _aclService.ApplyAcl(query, customer);
+                }
+
+                return query;
+            }
         }
 
         /// <summary>
