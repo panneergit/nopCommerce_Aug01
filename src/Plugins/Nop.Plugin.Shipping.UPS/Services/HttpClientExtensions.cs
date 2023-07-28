@@ -39,7 +39,7 @@ namespace Nop.Plugin.Shipping.UPS.Services
                 return;
 
             var logger = EngineContext.Current.Resolve<ILogger>();
-            logger.Information($"UPS rates. Request: {request.Content?.ReadAsStringAsync().Result}");
+            logger.Information($"UPS rates. Request: {request}{Environment.NewLine}Content: {request.Content?.ReadAsStringAsync().Result}");
         }
 
         public static void ProcessResponse(this HttpClient httpClient, HttpResponseMessage response, UPSSettings upsSettings)
@@ -58,7 +58,7 @@ namespace Nop.Plugin.Shipping.UPS.Services
                 return;
 
             var logger = EngineContext.Current.Resolve<ILogger>();
-            logger.Information($"UPS rates. Response: {response.Content.ReadAsStringAsync().Result}");
+            logger.Information($"UPS rates. Response: {response}{Environment.NewLine}Content: {response.Content.ReadAsStringAsync().Result}");
         }
     }
 }
