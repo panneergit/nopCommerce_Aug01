@@ -25,6 +25,6 @@ namespace Nop.Plugin.Shipping.UPS
         /// <summary>
         /// Gets the production API URL
         /// </summary>
-        public static string ApiUrl => "https://onlinetools.ups.com/";
+        public static string ApiUrl => "https://onlinetools.ups.com/api";
     }
 }

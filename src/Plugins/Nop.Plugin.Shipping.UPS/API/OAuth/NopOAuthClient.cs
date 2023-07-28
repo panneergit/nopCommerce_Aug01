@@ -15,7 +15,7 @@ namespace Nop.Plugin.Shipping.UPS.API.OAuth
             _upsSettings = upsSettings;
 
             if (!_upsSettings.UseSandbox)
-                BaseUrl = UPSDefaults.ApiUrl;
+                BaseUrl = UPSDefaults.ApiUrl.Replace("/api", "");
         }
 
         partial void PrepareRequest(HttpClient client, HttpRequestMessage request,
