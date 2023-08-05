@@ -3,7 +3,7 @@ pipeline {
     stages {
         stage('vcs') {
             steps {
-                git branch: 'develop', 
+                git branch: 'master', 
                     url: 'https://github.com/panneergit/nopCommerce_Aug01.git'    
             }
             
