@@ -4,7 +4,7 @@ pipeline {
         stage('vcs') {
             steps {
                 git branch: 'develop', 
-                    url: 'https://github.com/CICDProjects/nopCommerceJuly23.git'    
+                    url: 'https://github.com/panneergit/nopCommerce_Aug01.git'    
             }
             
         }
