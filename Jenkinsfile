@@ -1,5 +1,5 @@
 pipeline {
-    agent {label 'NODE_2' }
+    agent {label 'DOT_NET_AGENT' }
     stages {
         stage('vcs') {
             steps {
